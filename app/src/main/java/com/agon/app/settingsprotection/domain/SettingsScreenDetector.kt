@@ -1116,8 +1116,7 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
 
         val cls = className.orEmpty().lowercase()
         val isSearchSurface = SEARCH_HOST_CLASSES.any { cls.contains(it) } ||
-            cls.contains("search") ||
-            (root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.isEditable == true)
+            cls.contains("search")
         if (!isSearchSurface) return false
 
         return scanForAutostartWording(root, depth = 0, counter = Counter())
@@ -1128,22 +1127,27 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
         depth: Int,
         counter: Counter,
     ): Boolean {
-        if (node == null || depth > 18 || counter.visited > 600) return false
+        if (node == null || depth > 10 || counter.visited > 120) return false
         counter.visited++
 
-        val text = node.text?.toString()
-        if (!text.isNullOrBlank() && text.length <= MAX_TEXT_LENGTH) {
-            val lowered = text.lowercase().trim()
-            if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
-                return true
-            }
-        }
+        // Never match editable input fields (the search bar itself) as a search result item
+        if (node.isEditable) return false
 
-        val desc = node.contentDescription?.toString()
-        if (!desc.isNullOrBlank() && desc.length <= MAX_TEXT_LENGTH) {
-            val lowered = desc.lowercase().trim()
-            if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
-                return true
+        if (node.isVisibleToUser) {
+            val text = node.text?.toString()
+            if (!text.isNullOrBlank() && text.length <= MAX_TEXT_LENGTH) {
+                val lowered = text.lowercase().trim()
+                if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
+                    return true
+                }
+            }
+
+            val desc = node.contentDescription?.toString()
+            if (!desc.isNullOrBlank() && desc.length <= MAX_TEXT_LENGTH) {
+                val lowered = desc.lowercase().trim()
+                if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
+                    return true
+                }
             }
         }
 
@@ -1151,6 +1155,8 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
         for (i in 0 until childCount) {
             val child = node.getChild(i) ?: continue
             val found = scanForAutostartWording(child, depth + 1, counter)
+            @Suppress("DEPRECATION")
+            runCatching { child.recycle() }
             if (found) return true
         }
         return false

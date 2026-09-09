@@ -487,12 +487,9 @@ class ShieldAccessibilityService : AccessibilityService() {
         }
 
         // Event Throttling: Restrict high-frequency TYPE_WINDOW_CONTENT_CHANGED events to avoid UI lag.
-        // Zero-latency exception is given to Settings search host frames where fast item appearance is critical.
         if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
             val now = SystemClock.elapsedRealtime()
-            val className = event.className?.toString()?.lowercase().orEmpty()
-            val isSearchHostFrame = className.contains("search")
-            if (!isSearchHostFrame && (now - lastContentChangeEventAt < CONTENT_CHANGE_THROTTLE_MS)) {
+            if (now - lastContentChangeEventAt < CONTENT_CHANGE_THROTTLE_MS) {
                 return
             }
             lastContentChangeEventAt = now
@@ -606,7 +603,7 @@ class ShieldAccessibilityService : AccessibilityService() {
             val isSearchHostFrame = className.contains("search")
             if (!isContentChange ||
                 guardNow - lastSettingsGuardAt >= SETTINGS_GUARD_MIN_INTERVAL_MS ||
-                isSearchHostFrame
+                (isSearchHostFrame && !imeVisible)
             ) {
                 lastSettingsGuardAt = guardNow
                 guardAppSettings(packageName, event.className?.toString(), event)
@@ -1078,20 +1075,25 @@ class ShieldAccessibilityService : AccessibilityService() {
      * ejection work without ever disabling the text-only keyword analysis path.
      */
     private fun isImeVisibleNow(event: AccessibilityEvent?): Boolean {
-        if (event != null &&
-            (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
-                event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ||
-                event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED) &&
-            event.source?.isEditable == true
-        ) {
-            // The CommonestIME signal, cheapest possible: the event itself is a typing edit.
-            return true
-        }
-        runCatching {
-            for (window in windows) {
-                if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) return true
+        if (event != null) {
+            val eventType = event.eventType
+            if (eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED
+            ) {
+                return true
+            }
+            if (eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED && event.source?.isEditable == true) {
+                return true
+            }
+            if (event.className?.toString()?.contains("EditText", ignoreCase = true) == true) {
+                return true
             }
         }
+        val hasImeWindow = runCatching {
+            windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        }.getOrDefault(false)
+        if (hasImeWindow) return true
+
         val focused = runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
         val editing = focused?.isEditable == true
         focused?.recycleCompat()
@@ -2118,7 +2120,7 @@ class ShieldAccessibilityService : AccessibilityService() {
         // Scans all rendered list items in com.android.settings and OEM settings search results.
         // As soon as any rendered node contains "Background autostart" or "Autostart", immediately
         // execute performGlobalAction(GLOBAL_ACTION_HOME) without waiting for user touch, click or scroll.
-        if (looksLikeSettingsPackage(packageName) && !ShieldRepository.isProtectionPaused()) {
+        if (!imeVisible && looksLikeSettingsPackage(packageName) && !ShieldRepository.isProtectionPaused()) {
             val searchRoot = eventWindowRoot(packageName)
             val hasAutostartResult = try {
                 settingsScreenDetector.findDirectAutostartSearchResult(packageName, className, searchRoot)
