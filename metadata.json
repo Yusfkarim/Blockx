@@ -1,0 +1,6 @@
+{
+  "name": "BlockX LaAbrah",
+  "description": "BlockX LaAbrah protection service. Filters adult, phishing and bypass content across browsers and apps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
