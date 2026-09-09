@@ -336,6 +336,8 @@ class ShieldAccessibilityService : AccessibilityService() {
     private var lastShortVideoScanAt = 0L
     // Last time the settings-protection guard ran a full-tree scan (throttles content-change churn).
     private var lastSettingsGuardAt = 0L
+    // Last time a TYPE_WINDOW_CONTENT_CHANGED event was dispatched (200ms throttle).
+    private var lastContentChangeEventAt = 0L
     // Throttle for the Telegram search BACK action: one press is enough to close search;
     // this stops a burst of content-changed events from firing repeated BACKs (which would
     // otherwise walk the user all the way out of Telegram).
@@ -467,6 +469,33 @@ class ShieldAccessibilityService : AccessibilityService() {
                 timeTracker.onForegroundApp(packageName)
             }
             return
+        }
+
+        // Instant Input / Selection Bypass:
+        // When the user is typing or changing text selections, skip heavy accessibility event
+        // processing to eliminate typing latency, cursor stutter, and keyboard closing.
+        // Exception: Browsers (for URL/search checks) and Telegram (for search field gating)
+        // are allowed through so essential typing-time safety policies remain active.
+        if (type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
+            type == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED
+        ) {
+            val isTypingProtectionTarget = isBrowser(packageName) ||
+                (packageName == "org.telegram.messenger" || packageName.startsWith("org.telegram.messenger."))
+            if (!isTypingProtectionTarget) {
+                return
+            }
+        }
+
+        // Event Throttling: Restrict high-frequency TYPE_WINDOW_CONTENT_CHANGED events to avoid UI lag.
+        // Zero-latency exception is given to Settings search host frames where fast item appearance is critical.
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            val now = SystemClock.elapsedRealtime()
+            val className = event.className?.toString()?.lowercase().orEmpty()
+            val isSearchHostFrame = className.contains("search")
+            if (!isSearchHostFrame && (now - lastContentChangeEventAt < CONTENT_CHANGE_THROTTLE_MS)) {
+                return
+            }
+            lastContentChangeEventAt = now
         }
 
         // IME safeguard (keyboard-collapse field fix): while a soft input method owns the
@@ -2085,6 +2114,26 @@ class ShieldAccessibilityService : AccessibilityService() {
             }
         }
 
+        // Instant interception of "Background autostart" search results:
+        // Scans all rendered list items in com.android.settings and OEM settings search results.
+        // As soon as any rendered node contains "Background autostart" or "Autostart", immediately
+        // execute performGlobalAction(GLOBAL_ACTION_HOME) without waiting for user touch, click or scroll.
+        if (looksLikeSettingsPackage(packageName) && !ShieldRepository.isProtectionPaused()) {
+            val searchRoot = eventWindowRoot(packageName)
+            val hasAutostartResult = try {
+                settingsScreenDetector.findDirectAutostartSearchResult(packageName, className, searchRoot)
+            } catch (_: Exception) {
+                false
+            } finally {
+                runCatching { searchRoot?.recycleCompat() }
+            }
+            if (hasAutostartResult) {
+                Log.d(TAG, "Instant autostart search interception triggered for $packageName: ejecting to HOME")
+                runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                return
+            }
+        }
+
         // Floating-settings check: a freeform / pop-up window owned by the Settings app while
         // protection is armed is a POTENTIAL bypass attempt (bounds-narrower-than-screen =
         // floating). Only Settings is targeted — every other app's floating windows stay
@@ -2866,6 +2915,8 @@ class ShieldAccessibilityService : AccessibilityService() {
 
         /** Follow-up inspection delay letting a progressively rendered page settle. */
         const val BROWSER_RESCAN_MS = 650L
+        /** Minimum gap between high-frequency content changes to prevent typing latency and UI lag. */
+        const val CONTENT_CHANGE_THROTTLE_MS = 200L
         private val URL_IN_TEXT = Regex(
             """(?i)\b((?:https?://)?(?:www\.)?[a-z0-9][a-z0-9\-.]{1,251}\.[a-z]{2,24}(?:/[^\s]*)?)""",
         )

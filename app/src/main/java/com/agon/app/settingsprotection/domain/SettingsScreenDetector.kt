@@ -1099,6 +1099,63 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
         )
     }
 
+    /**
+     * Instant interception of autostart / background-autostart search results rendered in
+     * Settings search lists (com.android.settings and OEM settings).
+     * Scans all rendered list items without waiting for user touch, click, or scroll.
+     * Returns true the instant any node contains "Background autostart", "Autostart", or
+     * localized equivalents.
+     */
+    fun findDirectAutostartSearchResult(
+        packageName: String,
+        className: String?,
+        root: AccessibilityNodeInfo?,
+    ): Boolean {
+        if (packageName.isBlank() || packageName == ownPackage || root == null) return false
+        if (!isSystemSurface(packageName)) return false
+
+        val cls = className.orEmpty().lowercase()
+        val isSearchSurface = SEARCH_HOST_CLASSES.any { cls.contains(it) } ||
+            cls.contains("search") ||
+            (root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.isEditable == true)
+        if (!isSearchSurface) return false
+
+        return scanForAutostartWording(root, depth = 0, counter = Counter())
+    }
+
+    private fun scanForAutostartWording(
+        node: AccessibilityNodeInfo?,
+        depth: Int,
+        counter: Counter,
+    ): Boolean {
+        if (node == null || depth > 18 || counter.visited > 600) return false
+        counter.visited++
+
+        val text = node.text?.toString()
+        if (!text.isNullOrBlank() && text.length <= MAX_TEXT_LENGTH) {
+            val lowered = text.lowercase().trim()
+            if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
+                return true
+            }
+        }
+
+        val desc = node.contentDescription?.toString()
+        if (!desc.isNullOrBlank() && desc.length <= MAX_TEXT_LENGTH) {
+            val lowered = desc.lowercase().trim()
+            if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
+                return true
+            }
+        }
+
+        val childCount = node.childCount
+        for (i in 0 until childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = scanForAutostartWording(child, depth + 1, counter)
+            if (found) return true
+        }
+        return false
+    }
+
 
     /**
      * True only while the window is REALLY the autostart/app-launch list. Structural, never
