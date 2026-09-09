@@ -27,8 +27,8 @@ android {
         applicationId = "com.familyshield.protection"
         minSdk = 24
         targetSdk = 36
-        versionCode = 513
-        versionName = "2.4.313"
+        versionCode = 514
+        versionName = "2.4.314"
 
         // Bundle full native debug symbols (for SQLCipher and other .so libraries) into the App
         // Bundle so Play Console can symbolicate native crashes and ANRs. Removes the Play Console

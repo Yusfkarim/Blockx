@@ -2856,7 +2856,9 @@ class ShieldAccessibilityService : AccessibilityService() {
             "url", "address", "search_box", "search_bar", "location_bar", "omnibox",
             "omnibox_text_field", "url_field", "url_bar", "urlbar", "address_bar",
             "browser_toolbar", "toolbar_edit", "toolbar_url", "top_toolbar", "search_plate",
-            "search_url", "search_edit_frame", "omnibar", "url_input",
+            "search_url", "search_edit_frame", "omnibar", "url_input", "web_address",
+            "display_url", "search_widget", "header_address_bar", "browser_address",
+            "url_container", "nav_bar_address", "site_name_or_address",
         )
 
         /** Same scan key within this window ⇒ the second scheduled pass is skipped (early-exit). */
