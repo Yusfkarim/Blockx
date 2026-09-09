@@ -19,7 +19,7 @@ import javax.inject.Singleton
  *  4. localized action words add confidence for skins with fully custom view ids.
  */
 @Singleton
-class SettingsScreenDetector @Inject constructor(@ApplicationContext private val context: Context) {
+class SettingsScreenDetector @Inject constructor(@param:ApplicationContext private val context: Context) {
 
     private val ownPackage: String = context.packageName
 

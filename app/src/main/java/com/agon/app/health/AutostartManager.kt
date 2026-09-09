@@ -59,6 +59,8 @@ class AutostartManager(private val context: Context) {
     private fun vendorIntents(vendor: DeviceVendor): List<Intent> = when (vendor) {
         DeviceVendor.XIAOMI, DeviceVendor.REDMI, DeviceVendor.POCO -> listOf(
             component("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+            component("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+                .putExtra("extra_pkgname", context.packageName),
             component("com.miui.securitycenter", "com.miui.powercenter.PowerSettings"),
             component("com.miui.powerkeeper", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity")
                 .putExtra("package_name", context.packageName),
@@ -84,6 +86,11 @@ class AutostartManager(private val context: Context) {
         DeviceVendor.HONOR -> listOf(
             component("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
             component("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"),
+        )
+        DeviceVendor.TRANSSION -> listOf(
+            component("com.transsion.phonemanager", "com.transsion.phonemanager.view.AppAutoStartActivity"),
+            component("com.transsion.phonemanager", "com.transsion.phonemanager.battery.PowerManagerActivity"),
+            component("com.transsion.phonemanager", "com.transsion.phonemanager.view.AutoStartListActivity"),
         )
         DeviceVendor.ONEPLUS -> listOf(
             component("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity"),
@@ -132,6 +139,7 @@ class AutostartManager(private val context: Context) {
             manufacturer.contains("huawei") || brand.contains("huawei") -> DeviceVendor.HUAWEI
             manufacturer.contains("asus") || brand.contains("asus") -> DeviceVendor.ASUS
             manufacturer.contains("nothing") || brand.contains("nothing") -> DeviceVendor.NOTHING
+            manufacturer.contains("infinix") || manufacturer.contains("tecno") || manufacturer.contains("transsion") || manufacturer.contains("itel") -> DeviceVendor.TRANSSION
             manufacturer.contains("motorola") || brand.contains("moto") -> DeviceVendor.MOTOROLA
             manufacturer.contains("google") || brand.contains("pixel") -> DeviceVendor.PIXEL
             else -> DeviceVendor.GENERIC

@@ -59,6 +59,7 @@ enum class DeviceVendor {
     ONEPLUS,
     HUAWEI,
     HONOR,
+    TRANSSION,
     MOTOROLA,
     PIXEL,
     ASUS,
@@ -76,7 +77,7 @@ enum class DeviceVendor {
  */
 @Singleton
 class BatteryOptimizationManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
 ) {
 
     /** The detected vendor, evaluated once. */
@@ -234,6 +235,10 @@ class BatteryOptimizationManager @Inject constructor(
                 "com.miui.securitycenter",
                 "com.miui.permcenter.autostart.AutoStartManagementActivity",
             ),
+            component(
+                "com.miui.securitycenter",
+                "com.miui.permcenter.permissions.PermissionsEditorActivity",
+            ).putExtra("extra_pkgname", context.packageName),
         )
 
         DeviceVendor.SAMSUNG -> listOf(
@@ -258,6 +263,12 @@ class BatteryOptimizationManager @Inject constructor(
                 "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
             ),
             component("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"),
+        )
+
+        DeviceVendor.TRANSSION -> listOf(
+            component("com.transsion.phonemanager", "com.transsion.phonemanager.battery.PowerManagerActivity"),
+            component("com.transsion.phonemanager", "com.transsion.phonemanager.view.AppAutoStartActivity"),
+            component("com.transsion.phonemanager", "com.transsion.phonemanager.view.AutoStartListActivity"),
         )
 
         DeviceVendor.OPPO, DeviceVendor.REALME -> listOf(
@@ -341,6 +352,8 @@ class BatteryOptimizationManager @Inject constructor(
             manufacturer.contains("huawei") || brand.contains("huawei") -> DeviceVendor.HUAWEI
             manufacturer.contains("asus") || brand.contains("asus") -> DeviceVendor.ASUS
             manufacturer.contains("nothing") || brand.contains("nothing") -> DeviceVendor.NOTHING
+            manufacturer.contains("infinix") || manufacturer.contains("tecno") || manufacturer.contains("transsion") || manufacturer.contains("itel") ->
+                DeviceVendor.TRANSSION
             manufacturer.contains("motorola") || brand.contains("moto") || brand.contains("lenovo") ->
                 DeviceVendor.MOTOROLA
             manufacturer.contains("google") || brand.contains("google") || brand.contains("pixel") ->

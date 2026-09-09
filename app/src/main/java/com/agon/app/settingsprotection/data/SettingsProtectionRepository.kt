@@ -37,7 +37,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class SettingsProtectionRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val preferences: SettingsProtectionPreferences,
     private val credentials: PinCredentialStore,
     private val notifications: ProtectionNotifier,

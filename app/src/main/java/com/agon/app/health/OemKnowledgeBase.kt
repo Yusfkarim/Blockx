@@ -12,6 +12,7 @@ object OemKnowledgeBase {
         DeviceVendor.VIVO -> "Funtouch / OriginOS"
         DeviceVendor.HUAWEI -> "EMUI"
         DeviceVendor.HONOR -> "MagicOS"
+        DeviceVendor.TRANSSION -> "HiOS / XOS (Infinix, Tecno)"
         DeviceVendor.ONEPLUS -> "OxygenOS / ColorOS"
         DeviceVendor.ASUS -> "ZenUI"
         DeviceVendor.NOTHING -> "Nothing OS"

@@ -405,7 +405,7 @@ class FamilyVpnService : VpnService() {
         // provider-operated safe endpoints at DNS time — the browser receives the safe address
         // for the ASKED name, so no incognito/backdoor bypass exists. A rewrite that fails
         // upstream falls through to plain resolution below (fail-open, never a broken page).
-        if (decision == null && SafeSearchForceStore.isEnabled() &&
+        if (SafeSearchForceStore.isEnabled() &&
             (qtype == DnsPacket.TYPE_A || qtype == DnsPacket.TYPE_AAAA)
         ) {
             val safeTarget = com.agon.app.blocklist.domain.SearchPolicy.safeSearchTarget(domain)
@@ -451,6 +451,8 @@ class FamilyVpnService : VpnService() {
      */
     private class Decision(val reason: String, val aiResult: AiContentClassifier.Result?)
 
+    private val domainDecisionCache = object : android.util.LruCache<String, Boolean>(2048) {}
+
     /**
      * Local policy decision for [domain], or null when the query may be forwarded.
      *
@@ -472,8 +474,17 @@ class FamilyVpnService : VpnService() {
      */
     private fun decide(domain: String): Decision? {
         if (isPrivateDnsActive()) return null
-        if (BlockEngine.isWebsiteAllowed(domain)) return null
-        if (!BuiltInAdultDomains.matches(domain)) return null
+        val cached = synchronized(domainDecisionCache) { domainDecisionCache.get(domain) }
+        if (cached != null) {
+            return if (cached) Decision("Blocked site", null) else null
+        }
+        if (BlockEngine.isWebsiteAllowed(domain)) {
+            synchronized(domainDecisionCache) { domainDecisionCache.put(domain, false) }
+            return null
+        }
+        val isBlocked = BuiltInAdultDomains.matches(domain)
+        synchronized(domainDecisionCache) { domainDecisionCache.put(domain, isBlocked) }
+        if (!isBlocked) return null
         return Decision("Blocked site", null)
     }
 

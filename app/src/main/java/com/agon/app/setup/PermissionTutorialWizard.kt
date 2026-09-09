@@ -20,8 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -178,7 +178,7 @@ fun PermissionTutorialWizard(
                         onClick = { showHelp = true },
                         modifier = Modifier.fillMaxWidth().height(50.dp),
                     ) {
-                        Icon(Icons.Default.HelpOutline, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
                         Spacer(Modifier.size(8.dp))
                         Text(helpLabel(language), fontWeight = FontWeight.Bold)
                     }

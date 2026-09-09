@@ -27,7 +27,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsProtectionViewModel @Inject constructor(
     private val repository: SettingsProtectionRepository,
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val ticker = MutableStateFlow(System.currentTimeMillis())

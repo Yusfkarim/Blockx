@@ -23,7 +23,7 @@ import javax.inject.Singleton
 
 /** Publishes the localized tamper alert shown after a blocked settings-access attempt. */
 @Singleton
-class ProtectionNotifier @Inject constructor(@ApplicationContext private val context: Context) {
+class ProtectionNotifier @Inject constructor(@param:ApplicationContext private val context: Context) {
 
     private val manager = NotificationManagerCompat.from(context)
 

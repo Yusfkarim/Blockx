@@ -10,16 +10,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Vibration
-import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,15 +101,15 @@ fun SettingsScreen(
                         preferences.notificationsEnabled,
                         onNotificationsChange,
                     )
-                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = .16f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .16f))
                     SwitchSetting(
-                        Icons.Outlined.VolumeUp,
+                        Icons.AutoMirrored.Outlined.VolumeUp,
                         "Focus sounds",
                         "Play subtle start and finish cues",
                         preferences.soundEnabled,
                         onSoundChange,
                     )
-                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = .16f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = .16f))
                     SwitchSetting(
                         Icons.Outlined.Vibration,
                         "Haptic feedback",

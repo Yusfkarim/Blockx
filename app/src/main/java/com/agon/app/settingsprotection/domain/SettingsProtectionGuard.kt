@@ -24,7 +24,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class SettingsProtectionGuard @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val detector: SettingsScreenDetector,
     private val repository: SettingsProtectionRepository,
 ) {

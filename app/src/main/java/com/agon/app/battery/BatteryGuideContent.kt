@@ -294,7 +294,7 @@ object BatteryGuideContent {
                 ),
             )
 
-            DeviceVendor.MOTOROLA, DeviceVendor.PIXEL, DeviceVendor.ASUS, DeviceVendor.NOTHING, DeviceVendor.GENERIC -> listOf(
+            DeviceVendor.MOTOROLA, DeviceVendor.PIXEL, DeviceVendor.ASUS, DeviceVendor.NOTHING, DeviceVendor.TRANSSION, DeviceVendor.GENERIC -> listOf(
                 Step(
                     when (language) {
                         "en" -> "Select BlockX LaAbrah from the app list."
@@ -330,6 +330,7 @@ object BatteryGuideContent {
             DeviceVendor.VIVO -> "Funtouch OS"
             DeviceVendor.HUAWEI -> "EMUI"
             DeviceVendor.HONOR -> "MagicOS"
+            DeviceVendor.TRANSSION -> "HiOS / XOS"
             DeviceVendor.MOTOROLA -> "My UX"
             DeviceVendor.PIXEL -> "Pixel"
             DeviceVendor.ASUS -> "ZenUI"

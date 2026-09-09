@@ -29,7 +29,7 @@ import javax.inject.Inject
 @HiltViewModel
 class PinLockViewModel @Inject constructor(
     private val repository: SettingsProtectionRepository,
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     data class UiState(
