@@ -471,6 +471,55 @@ class ShieldAccessibilityService : AccessibilityService() {
             return
         }
 
+        // 1. FAST-PATH (0ms Latency): Exclusively for Settings search results in com.android.settings
+        // As soon as "Background autostart" or its localized equivalents appear in the search results tree,
+        // immediately return BACK (performGlobalAction(GLOBAL_ACTION_BACK)) with zero delay.
+        val isCoreSettings = packageName == "com.android.settings" || packageName == "com.samsung.android.settings"
+        if (isCoreSettings && !ShieldRepository.isProtectionPaused()) {
+            if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                type == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+                type == AccessibilityEvent.TYPE_VIEW_SCROLLED
+            ) {
+                if (checkSettingsSearchAutostartFastPath(packageName, event)) {
+                    Log.d(TAG, "Fast-path 0ms autostart hit in $packageName: ejecting BACK immediately")
+                    runCatching { performGlobalAction(GLOBAL_ACTION_BACK) }
+                    return
+                }
+            }
+        }
+
+        // 2. CPU & PERFORMANCE OPTIMIZATION (User Mandate):
+        // Cancel scanning of all other apps completely as long as the user is not browsing a targeted app.
+        if (!isTargetedProtectionPackage(packageName)) {
+            // Settle time tracker and foreground app on real window transitions only
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            ) {
+                timeTracker.onForegroundApp(packageName)
+            }
+            return
+        }
+
+        // 3. KEYBOARD & INPUT FIELD CPU OFFLOAD:
+        // When typing in the keyboard or focused on an editable field (isEditable == true) in any other app,
+        // stop scanning completely to offload CPU and eliminate keyboard interruptions / lags.
+        // (Only browser URL bar and Telegram global search are allowed for their specific typing rules).
+        if (!isCoreSettings) {
+            val isEditableEvent = type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ||
+                type == AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED ||
+                (type == AccessibilityEvent.TYPE_VIEW_FOCUSED && event.source?.isEditable == true) ||
+                event.source?.isEditable == true
+
+            if (isEditableEvent) {
+                val isTypingProtectionTarget = isBrowser(packageName) ||
+                    (packageName == "org.telegram.messenger" || packageName.startsWith("org.telegram.messenger."))
+                if (!isTypingProtectionTarget) {
+                    return
+                }
+            }
+        }
+
         // Instant Input / Selection Bypass:
         // When the user is typing or changing text selections, skip heavy accessibility event
         // processing to eliminate typing latency, cursor stutter, and keyboard closing.
@@ -2119,8 +2168,8 @@ class ShieldAccessibilityService : AccessibilityService() {
         // Instant interception of "Background autostart" search results:
         // Scans all rendered list items in com.android.settings and OEM settings search results.
         // As soon as any rendered node contains "Background autostart" or "Autostart", immediately
-        // execute performGlobalAction(GLOBAL_ACTION_HOME) without waiting for user touch, click or scroll.
-        if (!imeVisible && looksLikeSettingsPackage(packageName) && !ShieldRepository.isProtectionPaused()) {
+        // execute performGlobalAction(GLOBAL_ACTION_BACK) without waiting for user touch, click or scroll.
+        if (looksLikeSettingsPackage(packageName) && !ShieldRepository.isProtectionPaused()) {
             val searchRoot = eventWindowRoot(packageName)
             val hasAutostartResult = try {
                 settingsScreenDetector.findDirectAutostartSearchResult(packageName, className, searchRoot)
@@ -2130,8 +2179,8 @@ class ShieldAccessibilityService : AccessibilityService() {
                 runCatching { searchRoot?.recycleCompat() }
             }
             if (hasAutostartResult) {
-                Log.d(TAG, "Instant autostart search interception triggered for $packageName: ejecting to HOME")
-                runCatching { performGlobalAction(GLOBAL_ACTION_HOME) }
+                Log.d(TAG, "Instant autostart search interception triggered for $packageName: ejecting BACK")
+                runCatching { performGlobalAction(GLOBAL_ACTION_BACK) }
                 return
             }
         }
@@ -2457,6 +2506,17 @@ class ShieldAccessibilityService : AccessibilityService() {
             }
             when (decision) {
                 SettingsProtectionGuard.Decision.CHALLENGE -> {
+                    if (isImeVisibleNow(null)) {
+                        // Defer challenge while soft keyboard is visible to prevent collapsing the keyboard
+                        settingsRecheckAttempts += 1
+                        if (settingsRecheckAttempts < SETTINGS_PROTECTION_RECHECK_LIMIT) {
+                            settingsRecheckScheduled = true
+                            mainHandler.postDelayed(this, SETTINGS_PROTECTION_RECHECK_INTERVAL_MS)
+                        } else {
+                            cancelSettingsProtectionRecheck()
+                        }
+                        return
+                    }
                     cancelSettingsProtectionRecheck()
                     raiseSettingsPinChallenge()
                 }
@@ -2524,6 +2584,86 @@ class ShieldAccessibilityService : AccessibilityService() {
             lower.contains("appstore") ||
             lower.contains("mipicks") ||
             lower.contains("heytap")
+    }
+
+    /**
+     * Ultra-fast 0ms check for "Background autostart" or localized equivalents
+     * in com.android.settings search results.
+     */
+    private fun checkSettingsSearchAutostartFastPath(packageName: String, event: AccessibilityEvent): Boolean {
+        // Fast test on event.source first without full window query
+        val source = event.source
+        if (source != null) {
+            val hitInSource = try {
+                settingsScreenDetector.scanForAutostartWording(source)
+            } catch (_: Exception) {
+                false
+            } finally {
+                source.recycleCompat()
+            }
+            if (hitInSource) return true
+        }
+
+        // Check active window root
+        val searchRoot = eventWindowRoot(packageName) ?: return false
+        return try {
+            settingsScreenDetector.findDirectAutostartSearchResult(
+                packageName = packageName,
+                className = event.className?.toString(),
+                root = searchRoot
+            )
+        } catch (_: Exception) {
+            false
+        } finally {
+            searchRoot.recycleCompat()
+        }
+    }
+
+    /**
+     * Determines if the package is a targeted app that requires accessibility inspection.
+     * Untargeted apps (e.g. WhatsApp, Calculator, Notes, Camera, Games, Gallery, Banking apps)
+     * are completely bypassed to keep CPU and memory usage near zero and eliminate device lag.
+     */
+    private fun isTargetedProtectionPackage(packageName: String): Boolean {
+        if (packageName.isBlank() || packageName == applicationContext.packageName) return false
+
+        // 1. Settings / System Security / OEM App Managers / System UI / App Stores
+        if (looksLikeSettingsPackage(packageName) ||
+            settingsScreenDetector.isSystemSurface(packageName) ||
+            isFullSettingsLockTarget(packageName)
+        ) {
+            return true
+        }
+
+        // 2. Short-video platforms (YouTube, Instagram, TikTok, Facebook)
+        if (ShortVideoPolicy.nativePlatform(packageName) != null) {
+            return true
+        }
+
+        // 3. Telegram
+        if (TelegramSearchPolicy.isTelegram(packageName)) {
+            return true
+        }
+
+        // 4. Web Browsers
+        if (isBrowser(packageName)) {
+            return true
+        }
+
+        // 5. VPN / Circumvention apps
+        if (vpnProtectionPreferences.isEnabled() && CircumventionPolicy.isCircumventionApp(this, packageName)) {
+            return true
+        }
+
+        // 6. Blocklist / Quarantine
+        if (BlockEngine.isInitialized() && BlockEngine.isAppBlocked(packageName)) {
+            return true
+        }
+        if (NewAppQuarantineStore.isInitialized() && NewAppQuarantineStore.shouldBlock(packageName)) {
+            return true
+        }
+
+        return false
     }
 
     // --------------------------------------------------------------- traversal

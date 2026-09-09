@@ -1116,48 +1116,89 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
 
         val cls = className.orEmpty().lowercase()
         val isSearchSurface = SEARCH_HOST_CLASSES.any { cls.contains(it) } ||
-            cls.contains("search")
+            cls.contains("search") ||
+            isSettingsSearchSurface(root)
         if (!isSearchSurface) return false
 
-        return scanForAutostartWording(root, depth = 0, counter = Counter())
+        return scanForAutostartWording(root)
     }
 
-    private fun scanForAutostartWording(
+    fun isSettingsSearchSurface(root: AccessibilityNodeInfo?): Boolean {
+        if (root == null) return false
+        val hasSearchWidget = runCatching {
+            root.findAccessibilityNodeInfosByViewId("android:id/search_src_text").isNotEmpty() ||
+            root.findAccessibilityNodeInfosByViewId("com.android.settings:id/search_src_text").isNotEmpty() ||
+            root.findAccessibilityNodeInfosByViewId("com.android.settings:id/search_bar").isNotEmpty() ||
+            root.findAccessibilityNodeInfosByViewId("com.android.settings:id/search_results").isNotEmpty() ||
+            root.findAccessibilityNodeInfosByViewId("com.android.settings:id/list_results").isNotEmpty() ||
+            root.findAccessibilityNodeInfosByViewId("com.android.settings:id/search_result_recycler_view").isNotEmpty()
+        }.getOrDefault(false)
+        if (hasSearchWidget) return true
+
+        val focused = runCatching { root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+        val isEditableFocus = focused?.isEditable == true
+        @Suppress("DEPRECATION")
+        runCatching { focused?.recycle() }
+        return isEditableFocus
+    }
+
+    fun isAutostartSearchMatch(raw: String): Boolean {
+        val lowered = normalizeForIdentity(raw.lowercase().trim())
+        if (lowered.length < 3) return false
+        return AUTOSTART_LIST_TITLE_WORDS.any { keyword ->
+            val normKeyword = normalizeForIdentity(keyword.lowercase().trim())
+            lowered == normKeyword || lowered.contains(normKeyword)
+        }
+    }
+
+    fun scanForAutostartWording(node: AccessibilityNodeInfo?): Boolean {
+        return scanForAutostartWordingInternal(node, depth = 0, counter = Counter())
+    }
+
+    private fun scanForAutostartWordingInternal(
         node: AccessibilityNodeInfo?,
         depth: Int,
         counter: Counter,
     ): Boolean {
-        if (node == null || depth > 10 || counter.visited > 120) return false
+        if (node == null || depth > 15 || counter.visited > 200) return false
         counter.visited++
 
         // Never match editable input fields (the search bar itself) as a search result item
-        if (node.isEditable) return false
+        val isEditable = node.isEditable ||
+            node.className?.toString()?.contains("EditText", ignoreCase = true) == true
+        val viewId = node.viewIdResourceName?.lowercase().orEmpty()
+        val isSearchBox = isEditable ||
+            viewId.contains("search_src_text") ||
+            viewId.contains("search_edit") ||
+            viewId.contains("search_plate") ||
+            viewId.contains("search_bar")
 
-        if (node.isVisibleToUser) {
+        if (!isSearchBox && node.isVisibleToUser) {
             val text = node.text?.toString()
             if (!text.isNullOrBlank() && text.length <= MAX_TEXT_LENGTH) {
-                val lowered = text.lowercase().trim()
-                if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
+                if (isAutostartSearchMatch(text)) {
                     return true
                 }
             }
 
             val desc = node.contentDescription?.toString()
             if (!desc.isNullOrBlank() && desc.length <= MAX_TEXT_LENGTH) {
-                val lowered = desc.lowercase().trim()
-                if (AUTOSTART_LIST_TITLE_WORDS.any { lowered == it || lowered.contains(it) }) {
+                if (isAutostartSearchMatch(desc)) {
                     return true
                 }
             }
         }
 
-        val childCount = node.childCount
-        for (i in 0 until childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = scanForAutostartWording(child, depth + 1, counter)
-            @Suppress("DEPRECATION")
-            runCatching { child.recycle() }
-            if (found) return true
+        // Do not traverse into the search box children to preserve keyboard typing and save CPU
+        if (!isSearchBox) {
+            val childCount = node.childCount
+            for (i in 0 until childCount) {
+                val child = node.getChild(i) ?: continue
+                val found = scanForAutostartWordingInternal(child, depth + 1, counter)
+                @Suppress("DEPRECATION")
+                runCatching { child.recycle() }
+                if (found) return true
+            }
         }
         return false
     }
@@ -1360,7 +1401,7 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
         }
     }
 
-    private fun isSystemSurface(packageName: String): Boolean {
+    fun isSystemSurface(packageName: String): Boolean {
         if (packageName in SYSTEM_PACKAGES) return true
         val lowered = packageName.lowercase()
         return SYSTEM_PACKAGE_MARKERS.any { lowered.contains(it) }
@@ -2254,10 +2295,20 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
             }
         }
 
-        val text = node.text?.toString()
-        val description = node.contentDescription?.toString()
-        inspectText(text, result, label)
-        inspectText(description, result, label)
+        // CRITICAL KEYBOARD & TYPING SAFETY:
+        // Do not inspect the text of editable input fields (such as search boxes).
+        // If the user types "autostart" in a search box, inspectText previously matched
+        // the user's keystrokes as an autostart screen title and triggered a PIN challenge/ejection
+        // while the user was typing, collapsing the soft keyboard mid-word.
+        val isEditableField = node.isEditable ||
+            nodeClass?.contains("EditText", ignoreCase = true) == true ||
+            nodeClass?.contains("AutoCompleteTextView", ignoreCase = true) == true
+        if (!isEditableField) {
+            val text = node.text?.toString()
+            val description = node.contentDescription?.toString()
+            inspectText(text, result, label)
+            inspectText(description, result, label)
+        }
 
         for (index in 0 until node.childCount) {
             walk(node.getChild(index), depth + 1, counter, result, label)
@@ -3204,31 +3255,55 @@ class SettingsScreenDetector @Inject constructor(@param:ApplicationContext priva
             "app_launch",
         )
 
-        /** Localized titles of the autostart list (secondary narrowing signal only). */
+        /** Localized titles of the autostart list across all OEM brands and languages. */
         val AUTOSTART_LIST_TITLE_WORDS = listOf(
-            // English
-            "background autostart", "autostart", "auto-launch", "auto launch",
-            "app launch", "startup manager", "app launch management",
-            // Arabic
-            "التشغيل التلقائي", "بدء التشغيل التلقائي", "التشغيل التلقائي في الخلفية",
-            "إدارة تشغيل التطبيقات",
-            // Kurdish (Sorani)
-            "کردنەوەی خۆکار", "خۆکارکردن", "دەستپێکردنی خۆکار",
-            // Kurdish (Sorani) — extended autostart vocabulary (both Kaf shapes)
-            "دەستپێكردنی خۆکار", "ئۆتۆستارت", "دەستپێکی خۆکار",
-            // Arabic — additional self-start synonyms
-            "التشغيل الذاتي", "البدء التلقائي", "البدء الذاتي", "تشغيل تلقائي للتطبيقات",
-            "الإطلاق التلقائي", "الاطلاق التلقائي", "إدارة بدء التشغيل",
-            // English alternates
-            "auto-start", "automatic start", "launch management", "launch app management",
-            "auto start",
+            // English (all variants)
+            "background autostart", "autostart", "auto-start", "auto launch", "auto-launch",
+            "background start", "startup manager", "app launch", "app launch management",
+            "start in background", "background app launch", "automatic start",
+            "launch management", "launch app management", "auto start",
+            // Arabic (all variants & synonyms)
+            "التشغيل التلقائي في الخلفية", "تشغيل تلقائي في الخلفية", "التشغيل التلقائي",
+            "بدء التشغيل التلقائي", "إدارة تشغيل التطبيقات", "التشغيل الذاتي", "البدء التلقائي",
+            "البدء الذاتي", "تشغيل تلقائي للتطبيقات", "الإطلاق التلقائي", "الاطلاق التلقائي",
+            "إدارة بدء التشغيل", "التشغيل في الخلفية", "تشغيل في الخلفية",
+            // Kurdish (Sorani & Badini - both Kaf shapes ك and ک, and Yeh shapes)
+            "کردنەوەی خۆکار", "خۆکارکردن", "دەستپێکردنی خۆکار", "دەستپێكردنی خۆکار",
+            "ئۆتۆستارت", "دەستپێکی خۆکار", "دەستپێكردنی خۆكار", "دەستپێکردن لە پاشبنەما",
+            "دەستپێكردن لە پاشبنەما", "کردنەوەی خۆکار لە پاشبنەما", "خۆکارکردن لە پاشبنەما",
             // Turkish
-            "otomatik başlatma", "otomatik baslatma",
+            "arka planda otomatik başlatma", "otomatik başlatma", "otomatik baslatma",
+            "arka plan otomatik başlatma",
             // Persian / Urdu / Hindi
-            "اجرای خودکار", "راه‌اندازی خودکار", "خودکار آغاز", "स्वतः प्रारंभ",
-            "شروع خودکار", "آغاز خودکار", "حالت شروع خودکار",
-            // Chinese / Japanese / Korean
-            "自启动管理", "开机自启", "开机自启动", "应用启动管理", "自動起動", "자동 실행",
+            "اجرای خودکار در پس‌زمینه", "اجرای خودکار", "راه‌اندازی خودکار", "خودکار آغاز",
+            "شروع خودکار", "آغاز خودکار", "حالت شروع خودکار", "पृष्ठभूमि में स्वतः प्रारंभ",
+            "स्वतः प्रारंभ", "ऑटो-स्टार्ट",
+            // French
+            "démarrage automatique en arrière-plan", "démarrage automatique", "demarrage automatique",
+            "lancement automatique",
+            // Spanish
+            "inicio automático en segundo plano", "inicio automático", "inicio automatico",
+            "arranque automático",
+            // German
+            "automatischer start im hintergrund", "automatischer start", "autostart",
+            // Italian
+            "avvio automatico in background", "avvio automatico",
+            // Portuguese
+            "início automático em segundo plano", "inicialização automática", "inicio automatico",
+            // Russian & Ukrainian
+            "автозапуск в фоновом режиме", "автозапуск", "автоматический запуск",
+            "фоновый автозапуск", "автозапуск у фоновому режимі",
+            // Chinese (Simplified & Traditional)
+            "后台自启动", "自启动", "自启动管理", "开机自启", "开机自启动", "应用启动管理",
+            "应用自启动", "背景自啟動", "自動啟動",
+            // Japanese
+            "バックグラウンド自動起動", "自動起動", "自動起動管理",
+            // Korean
+            "백그라운드 자동 실행", "자동 실행", "자동시작",
+            // Indonesian / Malay
+            "mulai otomatis di latar belakang", "mulai otomatis", "awal otomatis",
+            // Vietnamese
+            "tự khởi chạy dalam nền", "tự khởi chạy", "tự động khởi chạy",
         )
 
 
